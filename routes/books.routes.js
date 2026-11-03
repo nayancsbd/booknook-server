@@ -6,15 +6,17 @@ import {
   updateBook,
   deleteBook,
 } from '../controllers/books.controller.js';
+import { verifyToken } from '../middleware/verifyToken.js';
 
 const router = Router();
 
-// Books routes
+// Public route: GET /books
 router.get('/', getBooks);
-router.get('/:id', getBookById);
-router.post('/', createBook);
-router.patch('/:id', updateBook);
-router.delete('/:id', deleteBook);
+
+// Protected routes: verified JWT required
+router.get('/:id', verifyToken, getBookById);
+router.post('/', verifyToken, createBook);
+router.patch('/:id', verifyToken, updateBook);
+router.delete('/:id', verifyToken, deleteBook);
 
 export default router;
-

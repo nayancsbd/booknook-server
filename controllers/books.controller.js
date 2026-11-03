@@ -18,6 +18,7 @@ function isValidObjectId(id) {
 
 /**
  * GET /books
+ * Public endpoint.
  * Query params: limit (number), sort ('newest'), addedBy (email), category, search (case-insensitive title/author)
  * Returns an array of books.
  */
@@ -87,7 +88,7 @@ export async function getBooks(req, res, next) {
 
 /**
  * GET /books/:id
- * Validates ObjectId and returns the book or 404 if missing.
+ * Protected route. Validates ObjectId and returns the book or 404 if missing.
  */
 export async function getBookById(req, res, next) {
   try {
@@ -121,11 +122,28 @@ export async function getBookById(req, res, next) {
 
 /**
  * POST /books
- * Validates title, author, category, image URL, description, totalCopies >= 1, owner name and email.
+ * Protected route.
+ * Takes owner name and email strictly from req.user (from the verified token).
+ * Validates title, author, category, image URL, description, totalCopies >= 1.
  * Stores copies = totalCopies, createdAt = new Date(), and owner details.
  */
 export async function createBook(req, res, next) {
   try {
+    const ownerEmail = (req.user?.email || '').trim();
+    const ownerName = (
+      req.user?.name ||
+      req.user?.userName ||
+      (ownerEmail ? ownerEmail.split('@')[0] : 'Library Patron')
+    ).trim();
+
+    if (!ownerEmail) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Verified user email missing from authentication credentials.',
+      });
+    }
+
     const { title, author, category, image, description, totalCopies } = req.body;
     const errors = [];
 
@@ -152,29 +170,6 @@ export async function createBook(req, res, next) {
     const parsedTotalCopies = Number(totalCopies);
     if (!Number.isInteger(parsedTotalCopies) || parsedTotalCopies < 1) {
       errors.push('Total copies must be an integer greater than or equal to 1.');
-    }
-
-    const ownerEmail = (
-      req.body.addedByEmail ||
-      req.body.addedBy ||
-      req.body.userEmail ||
-      req.body.email ||
-      ''
-    ).trim();
-
-    const ownerName = (
-      req.body.addedByName ||
-      req.body.userName ||
-      req.body.name ||
-      req.body.ownerName ||
-      ''
-    ).trim();
-
-    if (!ownerEmail) {
-      errors.push('Owner email is required.');
-    }
-    if (!ownerName) {
-      errors.push('Owner name is required.');
     }
 
     if (errors.length > 0) {
@@ -216,6 +211,8 @@ export async function createBook(req, res, next) {
 
 /**
  * PATCH /books/:id
+ * Protected route.
+ * Returns 403 unless the book's owner email matches req.user.email.
  * Updates allowed fields only.
  */
 export async function updateBook(req, res, next) {
@@ -227,6 +224,36 @@ export async function updateBook(req, res, next) {
         success: false,
         error: 'NotFound',
         message: 'Book not found with the specified identifier.',
+      });
+    }
+
+    const { db } = await connectToDatabase();
+    const booksCollection = db.collection('books');
+
+    const existingBook = await booksCollection.findOne({ _id: new ObjectId(id) });
+    if (!existingBook) {
+      return res.status(404).json({
+        success: false,
+        error: 'NotFound',
+        message: 'Book not found with the specified identifier.',
+      });
+    }
+
+    // Verify ownership
+    const bookOwnerEmail =
+      existingBook.addedByEmail ||
+      existingBook.addedBy ||
+      existingBook.userEmail;
+
+    if (
+      !bookOwnerEmail ||
+      !req.user?.email ||
+      bookOwnerEmail.toLowerCase() !== req.user.email.toLowerCase()
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'Access denied. You can only modify books that you added to the library.',
       });
     }
 
@@ -311,22 +338,11 @@ export async function updateBook(req, res, next) {
 
     updates.updatedAt = new Date();
 
-    const { db } = await connectToDatabase();
-    const booksCollection = db.collection('books');
-
     const updatedBook = await booksCollection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updates },
       { returnDocument: 'after' }
     );
-
-    if (!updatedBook) {
-      return res.status(404).json({
-        success: false,
-        error: 'NotFound',
-        message: 'Book not found with the specified identifier.',
-      });
-    }
 
     return res.status(200).json(updatedBook);
   } catch (error) {
@@ -336,6 +352,8 @@ export async function updateBook(req, res, next) {
 
 /**
  * DELETE /books/:id
+ * Protected route.
+ * Returns 403 unless the book's owner email matches req.user.email.
  * Removes the book from the database.
  */
 export async function deleteBook(req, res, next) {
@@ -353,14 +371,34 @@ export async function deleteBook(req, res, next) {
     const { db } = await connectToDatabase();
     const booksCollection = db.collection('books');
 
-    const result = await booksCollection.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) {
+    const existingBook = await booksCollection.findOne({ _id: new ObjectId(id) });
+    if (!existingBook) {
       return res.status(404).json({
         success: false,
         error: 'NotFound',
         message: 'Book not found with the specified identifier.',
       });
     }
+
+    // Verify ownership
+    const bookOwnerEmail =
+      existingBook.addedByEmail ||
+      existingBook.addedBy ||
+      existingBook.userEmail;
+
+    if (
+      !bookOwnerEmail ||
+      !req.user?.email ||
+      bookOwnerEmail.toLowerCase() !== req.user.email.toLowerCase()
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'Access denied. You can only remove books that you added to the library.',
+      });
+    }
+
+    await booksCollection.deleteOne({ _id: new ObjectId(id) });
 
     return res.status(200).json({
       success: true,
@@ -370,4 +408,3 @@ export async function deleteBook(req, res, next) {
     return next(error);
   }
 }
-
