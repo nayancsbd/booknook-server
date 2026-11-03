@@ -16,12 +16,6 @@ function isValidObjectId(id) {
   return ObjectId.isValid(id) && String(new ObjectId(id)) === id;
 }
 
-/**
- * GET /books
- * Public endpoint.
- * Query params: limit (number), sort ('newest'), addedBy (email), category, search (case-insensitive title/author)
- * Returns an array of books.
- */
 export async function getBooks(req, res, next) {
   try {
     const { db } = await connectToDatabase();
@@ -64,7 +58,6 @@ export async function getBooks(req, res, next) {
       filter.$and = conditions;
     }
 
-    // Default sort by createdAt descending ('newest' or default)
     let sortOption = { createdAt: -1 };
     if (sort === 'newest') {
       sortOption = { createdAt: -1 };
@@ -86,10 +79,6 @@ export async function getBooks(req, res, next) {
   }
 }
 
-/**
- * GET /books/:id
- * Protected route. Validates ObjectId and returns the book or 404 if missing.
- */
 export async function getBookById(req, res, next) {
   try {
     const { id } = req.params;
@@ -120,13 +109,6 @@ export async function getBookById(req, res, next) {
   }
 }
 
-/**
- * POST /books
- * Protected route.
- * Takes owner name and email strictly from req.user (from the verified token).
- * Validates title, author, category, image URL, description, totalCopies >= 1.
- * Stores copies = totalCopies, createdAt = new Date(), and owner details.
- */
 export async function createBook(req, res, next) {
   try {
     const ownerEmail = (req.user?.email || '').trim();
@@ -209,12 +191,6 @@ export async function createBook(req, res, next) {
   }
 }
 
-/**
- * PATCH /books/:id
- * Protected route.
- * Returns 403 unless the book's owner email matches req.user.email.
- * Updates allowed fields only.
- */
 export async function updateBook(req, res, next) {
   try {
     const { id } = req.params;
@@ -239,7 +215,6 @@ export async function updateBook(req, res, next) {
       });
     }
 
-    // Verify ownership
     const bookOwnerEmail =
       existingBook.addedByEmail ||
       existingBook.addedBy ||
@@ -350,12 +325,6 @@ export async function updateBook(req, res, next) {
   }
 }
 
-/**
- * DELETE /books/:id
- * Protected route.
- * Returns 403 unless the book's owner email matches req.user.email.
- * Removes the book from the database.
- */
 export async function deleteBook(req, res, next) {
   try {
     const { id } = req.params;
@@ -380,7 +349,6 @@ export async function deleteBook(req, res, next) {
       });
     }
 
-    // Verify ownership
     const bookOwnerEmail =
       existingBook.addedByEmail ||
       existingBook.addedBy ||

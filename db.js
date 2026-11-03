@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Cached MongoDB Connection Helper (compatible with serverless & long-running containers)
 let cached = globalThis.__mongo;
 if (!cached) {
   cached = globalThis.__mongo = { client: null, db: null, promise: null };
@@ -38,4 +37,3 @@ export async function connectToDatabase() {
   await cached.promise;
   return { client: cached.client, db: cached.db };
 }
-

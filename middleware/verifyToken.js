@@ -15,11 +15,6 @@ function getJWKS() {
   return jwks;
 }
 
-/**
- * Middleware to verify BetterAuth-issued JWTs using jose and remote JWKS.
- * Attaches decoded user payload (id, email, name) to req.user.
- * Returns 401 Unauthorized for missing or invalid tokens.
- */
 export async function verifyToken(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -43,7 +38,6 @@ export async function verifyToken(req, res, next) {
 
     const remoteJWKS = getJWKS();
 
-    // Verify token cryptographic signature and expiration against BetterAuth JWKS
     const verifyOptions = {};
     if (process.env.AUTH_ISSUER) {
       verifyOptions.issuer = process.env.AUTH_ISSUER;
@@ -88,4 +82,3 @@ export async function verifyToken(req, res, next) {
 }
 
 export default verifyToken;
-

@@ -10,10 +10,7 @@ import { verifyToken } from '../middleware/verifyToken.js';
 
 const router = Router();
 
-// Public route: GET /books
 router.get('/', getBooks);
-
-// Protected routes: verified JWT required
 router.get('/:id', verifyToken, getBookById);
 router.post('/', verifyToken, createBook);
 router.patch('/:id', verifyToken, updateBook);
