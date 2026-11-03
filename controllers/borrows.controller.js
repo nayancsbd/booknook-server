@@ -1,9 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { connectToDatabase } from '../db.js';
-
-function isValidObjectId(id) {
-  return ObjectId.isValid(id) && String(new ObjectId(id)) === id;
-}
+import { isValidObjectId, validateBorrowInput } from '../utils/validation.js';
 
 let indexCreated = false;
 
@@ -22,7 +19,6 @@ async function getBorrowsCollection(db) {
 
 export async function createBorrow(req, res, next) {
   try {
-    const { bookId } = req.body;
     const userEmail = req.user?.email;
     const userName =
       req.user?.name ||
@@ -31,19 +27,18 @@ export async function createBorrow(req, res, next) {
 
     if (!userEmail) {
       return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
         message: 'Authentication session does not contain a verified email address.',
       });
     }
 
-    if (!bookId || !isValidObjectId(bookId)) {
+    const borrowValidation = validateBorrowInput(req.body);
+    if (!borrowValidation.isValid) {
       return res.status(400).json({
-        success: false,
-        error: 'ValidationError',
-        message: 'A valid book ID is required to borrow a book.',
+        message: borrowValidation.message,
       });
     }
+
+    const { bookId } = borrowValidation;
 
     const { db } = await connectToDatabase();
     const booksCollection = db.collection('books');
@@ -52,16 +47,12 @@ export async function createBorrow(req, res, next) {
     const book = await booksCollection.findOne({ _id: new ObjectId(bookId) });
     if (!book) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'The requested book was not found in the library catalog.',
       });
     }
 
     if (typeof book.copies === 'number' && book.copies <= 0) {
       return res.status(400).json({
-        success: false,
-        error: 'OutOfStock',
         message: `All copies of "${book.title}" are currently checked out. Please check back later.`,
       });
     }
@@ -73,8 +64,6 @@ export async function createBorrow(req, res, next) {
 
     if (existingBorrow) {
       return res.status(409).json({
-        success: false,
-        error: 'Conflict',
         message: `You already have an active loan for "${book.title}". Please return your current copy before borrowing again.`,
       });
     }
@@ -86,8 +75,6 @@ export async function createBorrow(req, res, next) {
 
     if (updateResult.modifiedCount === 0) {
       return res.status(400).json({
-        success: false,
-        error: 'OutOfStock',
         message: `Apologies! The last available copy of "${book.title}" was just checked out.`,
       });
     }
@@ -124,8 +111,6 @@ export async function createBorrow(req, res, next) {
 
       if (insertError.code === 11000) {
         return res.status(409).json({
-          success: false,
-          error: 'Conflict',
           message: `You already have an active loan for "${book.title}". Please return your current copy first.`,
         });
       }
@@ -143,8 +128,6 @@ export async function getUserBorrows(req, res, next) {
 
     if (!userEmail) {
       return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
         message: 'Authentication session does not contain a verified email address.',
       });
     }
@@ -170,16 +153,12 @@ export async function returnBorrow(req, res, next) {
 
     if (!userEmail) {
       return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
         message: 'Authentication session does not contain a verified email address.',
       });
     }
 
     if (!isValidObjectId(id)) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'Borrow record not found with the specified identifier.',
       });
     }
@@ -191,16 +170,12 @@ export async function returnBorrow(req, res, next) {
     const borrow = await borrowsCollection.findOne({ _id: new ObjectId(id) });
     if (!borrow) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'Borrow record not found or already returned.',
       });
     }
 
     if (borrow.userEmail.toLowerCase() !== userEmail.toLowerCase()) {
       return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
         message: 'Access denied. You can only return books that were borrowed under your account.',
       });
     }

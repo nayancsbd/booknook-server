@@ -1,20 +1,10 @@
 import { ObjectId } from 'mongodb';
 import { connectToDatabase } from '../db.js';
-
-const ALLOWED_CATEGORIES = ['Fiction', 'Science', 'History', 'Kids', 'Others'];
-
-function isValidUrl(urlString) {
-  try {
-    const url = new URL(urlString);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function isValidObjectId(id) {
-  return ObjectId.isValid(id) && String(new ObjectId(id)) === id;
-}
+import {
+  isValidObjectId,
+  validateBookCreate,
+  validateBookUpdate,
+} from '../utils/validation.js';
 
 export async function getBooks(req, res, next) {
   try {
@@ -85,8 +75,6 @@ export async function getBookById(req, res, next) {
 
     if (!isValidObjectId(id)) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'Book not found with the specified identifier.',
       });
     }
@@ -97,8 +85,6 @@ export async function getBookById(req, res, next) {
     const book = await booksCollection.findOne({ _id: new ObjectId(id) });
     if (!book) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'Book not found with the specified identifier.',
       });
     }
@@ -120,46 +106,15 @@ export async function createBook(req, res, next) {
 
     if (!ownerEmail) {
       return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
         message: 'Verified user email missing from authentication credentials.',
       });
     }
 
-    const { title, author, category, image, description, totalCopies } = req.body;
-    const errors = [];
-
-    if (!title || typeof title !== 'string' || !title.trim()) {
-      errors.push('Title is required and must be non-empty text.');
-    }
-
-    if (!author || typeof author !== 'string' || !author.trim()) {
-      errors.push('Author is required and must be non-empty text.');
-    }
-
-    if (!category || !ALLOWED_CATEGORIES.includes(category)) {
-      errors.push(`Category must be one of: ${ALLOWED_CATEGORIES.join(', ')}.`);
-    }
-
-    if (!image || typeof image !== 'string' || !isValidUrl(image.trim())) {
-      errors.push('Image must be a valid HTTP or HTTPS URL.');
-    }
-
-    if (!description || typeof description !== 'string' || !description.trim()) {
-      errors.push('Description is required and must be non-empty text.');
-    }
-
-    const parsedTotalCopies = Number(totalCopies);
-    if (!Number.isInteger(parsedTotalCopies) || parsedTotalCopies < 1) {
-      errors.push('Total copies must be an integer greater than or equal to 1.');
-    }
-
-    if (errors.length > 0) {
+    const validation = validateBookCreate(req.body);
+    if (!validation.isValid) {
       return res.status(400).json({
-        success: false,
-        error: 'ValidationError',
-        message: errors.join(' '),
-        errors,
+        message: validation.message,
+        errors: validation.errors,
       });
     }
 
@@ -167,13 +122,8 @@ export async function createBook(req, res, next) {
     const booksCollection = db.collection('books');
 
     const newBook = {
-      title: title.trim(),
-      author: author.trim(),
-      category,
-      image: image.trim(),
-      description: description.trim(),
-      totalCopies: parsedTotalCopies,
-      copies: parsedTotalCopies,
+      ...validation.sanitized,
+      copies: validation.sanitized.totalCopies,
       createdAt: new Date(),
       addedBy: ownerEmail,
       addedByEmail: ownerEmail,
@@ -197,8 +147,6 @@ export async function updateBook(req, res, next) {
 
     if (!isValidObjectId(id)) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'Book not found with the specified identifier.',
       });
     }
@@ -209,8 +157,6 @@ export async function updateBook(req, res, next) {
     const existingBook = await booksCollection.findOne({ _id: new ObjectId(id) });
     if (!existingBook) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'Book not found with the specified identifier.',
       });
     }
@@ -226,96 +172,33 @@ export async function updateBook(req, res, next) {
       bookOwnerEmail.toLowerCase() !== req.user.email.toLowerCase()
     ) {
       return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
         message: 'Access denied. You can only modify books that you added to the library.',
       });
     }
 
-    const { title, author, category, image, description, totalCopies, copies } = req.body;
-    const updates = {};
-    const errors = [];
+    const validation = validateBookUpdate(req.body);
 
-    if (title !== undefined) {
-      if (typeof title !== 'string' || !title.trim()) {
-        errors.push('Title must be non-empty text.');
-      } else {
-        updates.title = title.trim();
-      }
-    }
-
-    if (author !== undefined) {
-      if (typeof author !== 'string' || !author.trim()) {
-        errors.push('Author must be non-empty text.');
-      } else {
-        updates.author = author.trim();
-      }
-    }
-
-    if (category !== undefined) {
-      if (!ALLOWED_CATEGORIES.includes(category)) {
-        errors.push(`Category must be one of: ${ALLOWED_CATEGORIES.join(', ')}.`);
-      } else {
-        updates.category = category;
-      }
-    }
-
-    if (image !== undefined) {
-      if (typeof image !== 'string' || !isValidUrl(image.trim())) {
-        errors.push('Image must be a valid HTTP or HTTPS URL.');
-      } else {
-        updates.image = image.trim();
-      }
-    }
-
-    if (description !== undefined) {
-      if (typeof description !== 'string' || !description.trim()) {
-        errors.push('Description must be non-empty text.');
-      } else {
-        updates.description = description.trim();
-      }
-    }
-
-    if (totalCopies !== undefined) {
-      const parsedTotal = Number(totalCopies);
-      if (!Number.isInteger(parsedTotal) || parsedTotal < 1) {
-        errors.push('Total copies must be an integer greater than or equal to 1.');
-      } else {
-        updates.totalCopies = parsedTotal;
-      }
-    }
-
-    if (copies !== undefined) {
-      const parsedCopies = Number(copies);
-      if (!Number.isInteger(parsedCopies) || parsedCopies < 0) {
-        errors.push('Copies must be an integer greater than or equal to 0.');
-      } else {
-        updates.copies = parsedCopies;
-      }
-    }
-
-    if (errors.length > 0) {
+    if (!validation.isValid) {
       return res.status(400).json({
-        success: false,
-        error: 'ValidationError',
-        message: errors.join(' '),
-        errors,
+        message: validation.message,
+        errors: validation.errors,
       });
     }
 
-    if (Object.keys(updates).length === 0) {
+    if (!validation.hasFields) {
       return res.status(400).json({
-        success: false,
-        error: 'BadRequest',
         message: 'No valid fields provided for update. Allowed fields: title, author, category, image, description, totalCopies, copies.',
       });
     }
 
-    updates.updatedAt = new Date();
+    const updateDoc = {
+      ...validation.updates,
+      updatedAt: new Date(),
+    };
 
     const updatedBook = await booksCollection.findOneAndUpdate(
       { _id: new ObjectId(id) },
-      { $set: updates },
+      { $set: updateDoc },
       { returnDocument: 'after' }
     );
 
@@ -331,8 +214,6 @@ export async function deleteBook(req, res, next) {
 
     if (!isValidObjectId(id)) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'Book not found with the specified identifier.',
       });
     }
@@ -343,8 +224,6 @@ export async function deleteBook(req, res, next) {
     const existingBook = await booksCollection.findOne({ _id: new ObjectId(id) });
     if (!existingBook) {
       return res.status(404).json({
-        success: false,
-        error: 'NotFound',
         message: 'Book not found with the specified identifier.',
       });
     }
@@ -360,8 +239,6 @@ export async function deleteBook(req, res, next) {
       bookOwnerEmail.toLowerCase() !== req.user.email.toLowerCase()
     ) {
       return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
         message: 'Access denied. You can only remove books that you added to the library.',
       });
     }

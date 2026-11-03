@@ -53,8 +53,6 @@ app.get('/', (req, res) => {
 
 app.use((req, res) => {
   res.status(404).json({
-    success: false,
-    error: 'Not Found',
     message: `Cannot ${req.method} ${req.originalUrl}. Route not found.`,
   });
 });
@@ -63,13 +61,11 @@ app.use((err, req, res, next) => {
   console.error('Unhandled server error:', err);
   const status = err.status || err.statusCode || 500;
   res.status(status).json({
-    success: false,
-    error: err.name || 'InternalServerError',
     message: err.message || 'An unexpected error occurred while processing your library request.',
   });
 });
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`BookNook server running smoothly on port ${PORT}`);
   });

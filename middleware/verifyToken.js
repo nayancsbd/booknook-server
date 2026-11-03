@@ -21,8 +21,6 @@ export async function verifyToken(req, res, next) {
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
         message: 'Authentication required. Missing or malformed Bearer token.',
       });
     }
@@ -30,8 +28,6 @@ export async function verifyToken(req, res, next) {
     const token = authHeader.substring(7).trim();
     if (!token) {
       return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
         message: 'Authentication required. Bearer token is empty.',
       });
     }
@@ -57,8 +53,6 @@ export async function verifyToken(req, res, next) {
 
     if (!userEmail) {
       return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
         message: 'Authentication token is missing a valid user email claim.',
       });
     }
@@ -74,8 +68,6 @@ export async function verifyToken(req, res, next) {
   } catch (error) {
     console.error('JWT verification error:', error.message);
     return res.status(401).json({
-      success: false,
-      error: 'Unauthorized',
       message: 'Invalid or expired authentication session. Please sign in again.',
     });
   }
