@@ -69,8 +69,11 @@ export async function createBorrow(req, res, next) {
     }
 
     const updateResult = await booksCollection.updateOne(
-      { _id: new ObjectId(bookId), copies: { $gt: 0 } },
-      { $inc: { copies: -1 } }
+      {
+        _id: new ObjectId(bookId),
+        $or: [{ copies: { $gt: 0 } }, { quantity: { $gt: 0 } }],
+      },
+      { $inc: { copies: -1, quantity: -1 } }
     );
 
     if (updateResult.modifiedCount === 0) {
@@ -106,7 +109,7 @@ export async function createBorrow(req, res, next) {
       console.error('Insert borrow failed, rolling back copy decrement:', insertError.message);
       await booksCollection.updateOne(
         { _id: new ObjectId(bookId) },
-        { $inc: { copies: 1 } }
+        { $inc: { copies: 1, quantity: 1 } }
       );
 
       if (insertError.code === 11000) {
@@ -185,7 +188,7 @@ export async function returnBorrow(req, res, next) {
     if (borrow.bookId && isValidObjectId(borrow.bookId)) {
       await booksCollection.updateOne(
         { _id: new ObjectId(borrow.bookId) },
-        { $inc: { copies: 1 } }
+        { $inc: { copies: 1, quantity: 1 } }
       );
     }
 

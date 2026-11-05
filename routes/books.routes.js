@@ -11,7 +11,7 @@ import { verifyToken } from '../middleware/verifyToken.js';
 const router = Router();
 
 router.get('/', getBooks);
-router.get('/:id', verifyToken, getBookById);
+router.get('/:id', getBookById);
 router.post('/', verifyToken, createBook);
 router.patch('/:id', verifyToken, updateBook);
 router.delete('/:id', verifyToken, deleteBook);

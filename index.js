@@ -10,9 +10,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const envOrigins = (process.env.CLIENT_URL || '')
+  .split(',')
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
 const allowedOrigins = [
   'http://localhost:3000',
-  process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/$/, '') : null,
+  ...envOrigins,
 ].filter(Boolean);
 
 const corsOptions = {
@@ -21,15 +26,24 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    const normalizedOrigin = origin.replace(/\/$/, '');
+    const normalizedOrigin = origin.replace(/\/+$/, '');
+    let isVercelDomain = false;
+    try {
+      const hostname = new URL(origin).hostname;
+      isVercelDomain = hostname.endsWith('.vercel.app');
+    } catch {
+      isVercelDomain = false;
+    }
+
     if (
-      allowedOrigins.includes(origin) ||
-      allowedOrigins.includes(normalizedOrigin)
+      allowedOrigins.includes(normalizedOrigin) ||
+      isVercelDomain ||
+      process.env.NODE_ENV !== 'production'
     ) {
       return callback(null, true);
     }
 
-    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -41,6 +55,8 @@ app.use(express.json());
 
 app.use('/books', booksRouter);
 app.use('/borrows', borrowsRouter);
+app.use('/api/books', booksRouter);
+app.use('/api/borrows', borrowsRouter);
 
 app.get('/', (req, res) => {
   res.status(200).json({
@@ -66,8 +82,19 @@ app.use((err, req, res, next) => {
 });
 
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`BookNook server running smoothly on port ${PORT}`);
+  });
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      const fallbackPort = 5001;
+      console.log(`Port ${PORT} in use, switching to port ${fallbackPort}...`);
+      app.listen(fallbackPort, () => {
+        console.log(`BookNook server running smoothly on port ${fallbackPort}`);
+      });
+    } else {
+      console.error('Server listen error:', err);
+    }
   });
 }
 

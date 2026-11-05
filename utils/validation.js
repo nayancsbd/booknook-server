@@ -39,7 +39,8 @@ export function validateBookCreate(data) {
     errors.push('Description is required and must be non-empty text.');
   }
 
-  const parsedTotalCopies = Number(totalCopies);
+  const rawCopies = totalCopies !== undefined ? totalCopies : (data?.copies !== undefined ? data.copies : data?.quantity);
+  const parsedTotalCopies = Number(rawCopies);
   if (!Number.isInteger(parsedTotalCopies) || parsedTotalCopies < 1) {
     errors.push('Total copies must be an integer greater than or equal to 1.');
   }
@@ -55,12 +56,14 @@ export function validateBookCreate(data) {
       image: image.trim(),
       description: description.trim(),
       totalCopies: parsedTotalCopies,
+      copies: parsedTotalCopies,
+      quantity: parsedTotalCopies,
     } : null,
   };
 }
 
 export function validateBookUpdate(data) {
-  const { title, author, category, image, description, totalCopies, copies } = data || {};
+  const { title, author, category, image, description, totalCopies, copies, quantity } = data || {};
   const updates = {};
   const errors = [];
 
@@ -104,12 +107,17 @@ export function validateBookUpdate(data) {
     }
   }
 
-  if (totalCopies !== undefined) {
-    const parsedTotal = Number(totalCopies);
+  const rawTotalCopies = totalCopies !== undefined ? totalCopies : quantity;
+  if (rawTotalCopies !== undefined) {
+    const parsedTotal = Number(rawTotalCopies);
     if (!Number.isInteger(parsedTotal) || parsedTotal < 1) {
       errors.push('Total copies must be an integer greater than or equal to 1.');
     } else {
       updates.totalCopies = parsedTotal;
+      updates.quantity = parsedTotal;
+      if (copies === undefined) {
+        updates.copies = parsedTotal;
+      }
     }
   }
 
