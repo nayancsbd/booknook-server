@@ -58,13 +58,26 @@ app.use('/borrows', borrowsRouter);
 app.use('/api/books', booksRouter);
 app.use('/api/borrows', borrowsRouter);
 
-app.get('/', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    service: 'BookNook API',
-    message: 'Welcome to BookNook API. The library catalog and borrowing system are online.',
-    timestamp: new Date().toISOString(),
-  });
+app.get('/', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    await db.command({ ping: 1 });
+    res.status(200).json({
+      status: 'ok',
+      service: 'BookNook API',
+      database: 'connected',
+      message: 'Welcome to BookNook API. The library catalog and borrowing system are online.',
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    res.status(200).json({
+      status: 'ok',
+      service: 'BookNook API',
+      database: 'standby',
+      message: 'Welcome to BookNook API. The library catalog and borrowing system are online.',
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 app.use((req, res) => {
