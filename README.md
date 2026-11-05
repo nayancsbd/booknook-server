@@ -1,6 +1,23 @@
-# BookNook Server
+# BookNook – A Small Online Library (Server API)
 
-BookNook Server is the Express.js REST API powering the BookNook online library management system. Built with modern ECMAScript Modules (ESM) and the native MongoDB Node.js driver, it features stateless JSON Web Token (JWT) cryptographic verification against BetterAuth's JWKS endpoint, atomic stock synchronization, and robust concurrency protections.
+BookNook is an online library management system built around the core concept: **"Add a book, borrow a book, return a book."**
+
+This repository contains the backend REST API developed with Express.js (ESM) and the native MongoDB driver. It implements BetterAuth JWT verification via `jose` and JWKS, atomic stock tracking, duplicate borrow prevention, and role-based ownership authorization.
+
+- **Client Repository**: [BookNook Client](https://github.com/nayancsbd/booknook-client)
+- **Live Client Application**: `https://booknook-client.vercel.app` *(update with your production URL)*
+- **Live Server API**: `https://booknook-server.vercel.app` *(update with your production URL)*
+
+---
+
+## Key Website Features
+
+1. **Dynamic Catalog & Search Engine**: Real-time case-insensitive keyword search across book titles and authors, genre category filtering (Fiction, Science, History, Kids, Others), and sorting newest arrivals first.
+2. **Stateless JWT Security via JWKS**: Cryptographic token verification utilizing `jose`'s remote JWKS resolver against BetterAuth, eliminating shared secret management and database lookups for session verification.
+3. **Atomic Inventory Tracking**: Concurrency-safe `$inc: { copies: -1, quantity: -1 }` on borrow with automatic rollback if a record insertion fails, preventing negative stock or overselling.
+4. **Active Loan Duplicate Prevention**: Database-level compound unique index on `{ bookId: 1, userEmail: 1 }` in the `borrows` collection ensuring no patron can have two simultaneous active loans of the exact same title.
+5. **Role-Based Ownership Authorization**: Edit (`PATCH /books/:id`) and Delete (`DELETE /books/:id`) operations are cryptographically verified and restricted strictly to the user who added the book.
+6. **Serverless & Long-Running Dual Compatibility**: Full support for Vercel Serverless Functions via `api/index.js` and `vercel.json`, alongside standard Node/Render long-running servers with cached MongoDB connection pooling.
 
 ---
 
@@ -8,161 +25,166 @@ BookNook Server is the Express.js REST API powering the BookNook online library 
 
 - **Runtime**: Node.js (ESM)
 - **Framework**: Express.js 5
-- **Database**: MongoDB (Native Driver 7.x) with cached connection pooling
-- **Security & Auth**: `jose` with remote JWKS verification, `cors`, `dotenv`
-- **Validation**: Custom validation utilities with unified `{ message }` error schemas
+- **Database**: MongoDB (Native Driver 7.x)
+- **Authentication**: `jose` with remote JWKS verification against BetterAuth
+- **Utilities**: `cors`, `dotenv`
 
 ---
 
 ## Environment Variables
 
-Configure the following variables in `.env` (refer to `.env.example`):
+Configure these variables in your `.env` file (see `.env.example`):
 
 | Variable | Required | Description | Example |
 | :--- | :--- | :--- | :--- |
-| `MONGODB_URI` | Yes | MongoDB Atlas or local connection string | `mongodb+srv://user:pass@cluster0.mongodb.net/booknook?retryWrites=true&w=majority` |
-| `CLIENT_URL` | Yes | Client origin URL permitted by CORS | `http://localhost:3000` |
-| `AUTH_JWKS_URL` | Yes | BetterAuth JSON Web Key Set (JWKS) URL | `http://localhost:3000/api/auth/jwks` |
-| `PORT` | No | Server listening port (defaults to 5000) | `5000` |
-| `AUTH_ISSUER` | No | Optional issuer (`iss`) claim verification | `http://localhost:3000` |
-| `AUTH_AUDIENCE` | No | Optional audience (`aud`) claim verification | `booknook-api` |
+| `MONGODB_URI` | Yes | MongoDB Atlas connection string | `mongodb+srv://user:pass@cluster0.mongodb.net/booknook?retryWrites=true&w=majority` |
+| `CLIENT_URL` | Yes | Permitted client origin(s), comma-separated | `http://localhost:3000,https://booknook.vercel.app` |
+| `AUTH_JWKS_URL` | Yes | BetterAuth JWKS public key endpoint | `http://localhost:3000/api/auth/jwks` |
+| `PORT` | No | Local listening port (defaults to 5000) | `5000` |
+| `AUTH_ISSUER` | No | Optional issuer verification claim | `http://localhost:3000` |
+| `AUTH_AUDIENCE` | No | Optional audience verification claim | `booknook-api` |
 
 ---
 
-## Authentication Flow
+## Authentication & Authorization
 
-Protected endpoints require an `Authorization` header containing a valid Bearer token issued by BetterAuth's JWT plugin:
+All private/protected endpoints require an `Authorization` header containing a valid Bearer token issued by BetterAuth:
 
 ```http
 Authorization: Bearer <better-auth-jwt>
 ```
 
-- Tokens are verified cryptographically via `jose`'s `createRemoteJWKSet(new URL(process.env.AUTH_JWKS_URL))`.
-- Decoded user identity (`id`, `email`, `name`) is attached to `req.user`.
-- Missing, expired, or invalid tokens return HTTP 401 with a consistent `{ message }` payload suitable for toast alerts.
+- Verified using `createRemoteJWKSet(new URL(process.env.AUTH_JWKS_URL))`.
+- Attaches the authenticated user payload (`id`, `email`, `name`) to `req.user`.
+- Missing, expired, or invalid tokens return HTTP 401 with a clean `{ message }` payload suitable for client toast notifications.
 
 ---
 
 ## API Routes Specification
 
-The server exposes strictly 8 core endpoints plus a root health check. All error responses consistently provide a `{ message }` string.
+The server exposes strictly the **8 required endpoints** plus a root health check. All error responses provide a consistent `{ message }` string.
 
 ### Health Route
-- **`GET /`**
-  - **Auth**: Public
-  - **Description**: Returns server status, library catalog availability, and timestamp.
+- **`GET /`** (Public)
+  - Returns service status, operational state, and timestamp.
 
 ---
 
-### Book Catalog Routes (`/books`)
+### Book Management (`/books`)
 
 #### 1. `GET /books`
-- **Auth**: Public
-- **Description**: Retrieves books matching optional query parameters. Returns an array of book documents.
+- **Access**: Public
+- **Description**: Returns all books matching query filters as an array.
 - **Query Parameters**:
-  - `limit` *(number)*: Maximum books to return.
-  - `sort` *(string)*: Pass `'newest'` to sort by `createdAt` descending.
-  - `addedBy` *(string)*: Filter by contributor email.
-  - `category` *(string)*: Filter by genre (`Fiction`, `Science`, `History`, `Kids`, `Others`).
-  - `search` *(string)*: Case-insensitive search on `title` or `author`.
+  - `limit` *(number)*: Maximum books to return (e.g. `limit=6` for New Arrivals).
+  - `sort` *(string)*: `'newest'` sorts by `createdAt` descending.
+  - `addedBy` *(string)*: Case-insensitive filter by contributor email.
+  - `category` *(string)*: Filter by category (`Fiction`, `Science`, `History`, `Kids`, `Others`).
+  - `search` *(string)*: Case-insensitive search against title and author.
 
 #### 2. `GET /books/:id`
-- **Auth**: Protected (Requires Bearer token)
-- **Description**: Fetches a single book by its 24-character hex `ObjectId`.
-- **Responses**:
-  - `200 OK`: Book object.
-  - `404 Not Found`: `{ message: "Book not found with the specified identifier." }`
+- **Access**: Public
+- **Description**: Returns a single book by its 24-character hex `ObjectId`.
+- **Responses**: `200 OK` (book document), `404 Not Found` (`{ message: "Book not found with the specified identifier." }`).
 
 #### 3. `POST /books`
-- **Auth**: Protected (Requires Bearer token)
-- **Description**: Adds a new book to the catalog. Owner identity is extracted directly from the verified token (`req.user`).
-- **Body (`application/json`)**:
+- **Access**: Protected (Requires Bearer token)
+- **Description**: Adds a new book to the library catalog. Contributor identity (`addedBy`, `userEmail`, `userName`) is extracted strictly from the verified JWT.
+- **Body**:
   ```json
   {
-    "title": "To Kill a Mockingbird",
-    "author": "Harper Lee",
+    "title": "The Midnight Library",
+    "author": "Matt Haig",
     "category": "Fiction",
-    "image": "https://images.example.com/mockingbird.jpg",
-    "description": "A timeless exploration of courage and justice in the American South.",
+    "image": "https://images.example.com/cover.jpg",
+    "description": "Between life and death there is a library...",
     "totalCopies": 5
   }
   ```
-- **Stored Fields**: `copies` (set to `totalCopies`), `createdAt` (`new Date()`), `addedBy`, `addedByEmail`, `userEmail`, `addedByName`, `userName`.
-- **Responses**:
-  - `201 Created`: The created book document including `_id`.
-  - `400 Bad Request`: `{ message: "Validation error explanation" }`
+- **Responses**: `201 Created` with full book document, `400 Bad Request` with `{ message, errors }`.
 
 #### 4. `PATCH /books/:id`
-- **Auth**: Protected (Requires Bearer token)
-- **Description**: Updates permitted fields of an existing book. Only the member who added the book can update it.
-- **Allowed Fields**: `title`, `author`, `category`, `image`, `description`, `totalCopies`, `copies`.
-- **Responses**:
-  - `200 OK`: Updated book document.
-  - `400 Bad Request`: Validation failure or no valid fields provided.
-  - `403 Forbidden`: `{ message: "Access denied. You can only modify books that you added to the library." }`
-  - `404 Not Found`: Book does not exist.
+- **Access**: Protected (Requires Bearer token)
+- **Description**: Modifies allowed book fields. Returns `403 Forbidden` unless the authenticated user is the book's creator.
+- **Allowed Fields**: `title`, `author`, `category`, `image`, `description`, `totalCopies`, `copies`, `quantity`.
+- **Responses**: `200 OK` with updated book document, `403 Forbidden`, `404 Not Found`.
 
 #### 5. `DELETE /books/:id`
-- **Auth**: Protected (Requires Bearer token)
-- **Description**: Removes a book from the catalog. Only the member who added the book can delete it.
-- **Responses**:
-  - `200 OK`: `{ success: true, message: "Book successfully deleted from the library catalog." }`
-  - `403 Forbidden`: `{ message: "Access denied. You can only remove books that you added to the library." }`
-  - `404 Not Found`: Book does not exist.
+- **Access**: Protected (Requires Bearer token)
+- **Description**: Removes a book from the library catalog. Returns `403 Forbidden` unless the authenticated user is the book's creator.
+- **Responses**: `200 OK` (`{ success: true, message: "Book successfully deleted..." }`), `403 Forbidden`, `404 Not Found`.
 
 ---
 
-### Borrowing & Loans Routes (`/borrows`)
+### Borrowing & Return System (`/borrows`)
 
 #### 6. `POST /borrows`
-- **Auth**: Protected (Requires Bearer token)
+- **Access**: Protected (Requires Bearer token)
 - **Description**: Borrows a copy of a book.
-- **Rules**:
-  - Rejects if `copies <= 0` (400 Bad Request).
-  - Rejects if the user already has an active loan of this book (409 Conflict).
-  - Enforces database unique compound index on `{ bookId: 1, userEmail: 1 }`.
-  - Atomically decrements copies via `updateOne({ _id, copies: { $gt: 0 } }, { $inc: { copies: -1 } })`.
-  - Stores `borrowDate` (now) and `returnDate` (now + 7 days).
-  - Automatically restores the book copy if record insertion fails.
-- **Body (`application/json`)**:
+- **Workflow & Rules**:
+  - Rejects if `copies <= 0` (HTTP 400 Out of Stock).
+  - Rejects with HTTP 409 Conflict if this user already has an active borrow of this book.
+  - Decrements copies atomically via `updateOne({ _id, copies: { $gt: 0 } }, { $inc: { copies: -1, quantity: -1 } })`.
+  - Inserts borrow record with `borrowDate = now` and `returnDate = now + 7 days`.
+  - Automatically restores copy count if insert fails.
+- **Body**:
   ```json
   {
     "bookId": "651a2b3c4d5e6f7a8b9c0d1e"
   }
   ```
-- **Responses**:
-  - `201 Created`: `{ success: true, message: "Successfully borrowed...", borrow: { ... } }`
-  - `400 Bad Request`: Invalid ID or book out of stock.
-  - `409 Conflict`: `{ message: "You already have an active loan for \"...\"." }`
+- **Responses**: `201 Created`, `400 Bad Request`, `409 Conflict`.
 
 #### 7. `GET /borrows`
-- **Auth**: Protected (Requires Bearer token)
-- **Description**: Returns all active borrowed books for the authenticated user, sorted by loan date descending.
-- **Responses**:
-  - `200 OK`: Array of borrow records.
+- **Access**: Protected (Requires Bearer token)
+- **Description**: Returns an array of all active loans belonging strictly to the authenticated user (`req.user.email`), sorted newest first.
+- **Responses**: `200 OK` (array of borrow records).
 
 #### 8. `DELETE /borrows/:id`
-- **Auth**: Protected (Requires Bearer token)
-- **Description**: Returns a borrowed book. Only the user who borrowed the book can return it.
-- **Rules**:
-  - Deletes the borrow document.
-  - Atomically increments the book's available `copies` by `+1`.
-- **Responses**:
-  - `200 OK`: `{ success: true, message: "\"Book Title\" has been successfully returned to the library. Thank you!" }`
-  - `403 Forbidden`: `{ message: "Access denied. You can only return books that were borrowed under your account." }`
-  - `404 Not Found`: Borrow record not found.
+- **Access**: Protected (Requires Bearer token)
+- **Description**: Returns a borrowed book to the library. Enforces ownership: only the user who borrowed the book can return it.
+- **Workflow**:
+  - Deletes the borrow record from the `borrows` collection.
+  - Atomically increments book inventory by `+1` (`$inc: { copies: 1, quantity: 1 }`).
+- **Responses**: `200 OK` (`{ success: true, message: "\"...\" has been successfully returned..." }`), `403 Forbidden`, `404 Not Found`.
+
+---
+
+## Local Development & Seeding
+
+### 1. Install Dependencies
+```bash
+npm install
+```
+
+### 2. Configure Environment
+```bash
+cp .env.example .env
+```
+Fill in your `MONGODB_URI`, `CLIENT_URL`, and `AUTH_JWKS_URL`.
+
+### 3. Seed Initial Library Catalog
+Populate the database with curated literature across all 5 categories:
+```bash
+npm run seed
+```
+
+### 4. Start Development Server
+```bash
+npm run dev
+```
 
 ---
 
 ## Deployment
 
 ### Vercel (Serverless)
-A [`vercel.json`](./vercel.json) configuration routes all incoming requests to the exported Express app in `index.js`.
-1. Connect repository to Vercel.
-2. Set Environment Variables (`MONGODB_URI`, `CLIENT_URL`, `AUTH_JWKS_URL`).
+Configured via [`vercel.json`](./vercel.json) and [`api/index.js`](./api/index.js).
+1. Import repository into Vercel.
+2. Set Environment Variables: `MONGODB_URI`, `CLIENT_URL`, `AUTH_JWKS_URL`.
 3. Deploy.
 
-### Render / Virtual Machines (Long-running)
-1. Set Build Command: `npm install`
-2. Set Start Command: `npm start`
-3. Configure Environment Variables in the Render dashboard.
+### Render (Container / VM)
+1. Build Command: `npm install`
+2. Start Command: `npm start`
+3. Configure environment variables in the Render dashboard.

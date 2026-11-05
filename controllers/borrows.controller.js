@@ -51,15 +51,20 @@ export async function createBorrow(req, res, next) {
       });
     }
 
-    if (typeof book.copies === 'number' && book.copies <= 0) {
+    const currentCopies = typeof book.copies === 'number' ? book.copies : book.quantity;
+    if (typeof currentCopies === 'number' && currentCopies <= 0) {
       return res.status(400).json({
         message: `All copies of "${book.title}" are currently checked out. Please check back later.`,
       });
     }
 
+    const escapedEmail = userEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const existingBorrow = await borrowsCollection.findOne({
       bookId: String(bookId),
-      userEmail,
+      $or: [
+        { userEmail: new RegExp(`^${escapedEmail}$`, 'i') },
+        { userEmail },
+      ],
     });
 
     if (existingBorrow) {
@@ -88,7 +93,9 @@ export async function createBorrow(req, res, next) {
     const borrowRecord = {
       bookId: String(bookId),
       bookTitle: book.title,
+      title: book.title,
       bookImage: book.image,
+      image: book.image,
       category: book.category || 'Fiction',
       userName,
       userEmail,
@@ -138,8 +145,17 @@ export async function getUserBorrows(req, res, next) {
     const { db } = await connectToDatabase();
     const borrowsCollection = await getBorrowsCollection(db);
 
+    const escapedEmail = userEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const emailRegex = new RegExp(`^${escapedEmail}$`, 'i');
+
     const borrows = await borrowsCollection
-      .find({ userEmail })
+      .find({
+        $or: [
+          { userEmail: emailRegex },
+          { userEmail },
+          { email: emailRegex },
+        ],
+      })
       .sort({ borrowDate: -1 })
       .toArray();
 
@@ -177,7 +193,10 @@ export async function returnBorrow(req, res, next) {
       });
     }
 
-    if (borrow.userEmail.toLowerCase() !== userEmail.toLowerCase()) {
+    if (
+      !borrow.userEmail ||
+      borrow.userEmail.toLowerCase() !== userEmail.toLowerCase()
+    ) {
       return res.status(403).json({
         message: 'Access denied. You can only return books that were borrowed under your account.',
       });
@@ -194,7 +213,7 @@ export async function returnBorrow(req, res, next) {
 
     return res.status(200).json({
       success: true,
-      message: `"${borrow.bookTitle}" has been successfully returned to the library. Thank you!`,
+      message: `"${borrow.bookTitle || borrow.title || 'Book'}" has been successfully returned to the library. Thank you!`,
     });
   } catch (error) {
     return next(error);

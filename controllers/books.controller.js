@@ -16,17 +16,20 @@ export async function getBooks(req, res, next) {
     const filter = {};
     const conditions = [];
 
-    if (category) {
-      conditions.push({ category: String(category).trim() });
+    if (category && String(category).trim() && String(category).trim().toLowerCase() !== 'all') {
+      const escapedCat = String(category).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      conditions.push({ category: new RegExp(`^${escapedCat}$`, 'i') });
     }
 
     if (addedBy) {
       const email = String(addedBy).trim();
+      const escaped = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const emailRegex = new RegExp(`^${escaped}$`, 'i');
       conditions.push({
         $or: [
-          { addedBy: email },
-          { addedByEmail: email },
-          { userEmail: email },
+          { addedBy: emailRegex },
+          { addedByEmail: emailRegex },
+          { userEmail: emailRegex },
         ],
       });
     }
