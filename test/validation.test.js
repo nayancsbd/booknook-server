@@ -39,3 +39,4 @@ assert.equal(validBorrow.isValid, true);
 assert.equal(validBorrow.bookId, '507f1f77bcf86cd799439011');
 
 console.log('All validation unit tests passed successfully!');
+
